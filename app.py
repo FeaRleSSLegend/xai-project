@@ -4,6 +4,8 @@ import pandas as pd
 import streamlit as st
 import shap
 import matplotlib.pyplot as plt
+from lime.lime_tabular import LimeTabularExplainer
+from groq import Groq
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 FEATURE_ORDER = [
@@ -23,21 +25,59 @@ PRICE_TIERS = {
     "Ultra-premium": 3,
 }
 
+GROQ_SYSTEM_PROMPT = (
+    "You are explaining an AI product recommendation system to a non-technical "
+    "user. Given SHAP feature contributions, explain in exactly 3 plain sentences: "
+    "what drove this recommendation score, which features helped and which hurt, "
+    "and what this means for the product overall. Be specific about feature names "
+    "and values. No bullet points, just flowing sentences."
+)
+
 
 @st.cache_resource
 def load_artifacts():
     model = joblib.load("models/recommendation_model.pkl")
     explainer = joblib.load("models/shap_explainer.pkl")
     brand_lookup = joblib.load("models/brand_lookup.pkl")
+    X_train_sample = np.load("models/X_train_sample.npy")
+    lime_explainer = LimeTabularExplainer(
+        training_data=X_train_sample,
+        feature_names=FEATURE_ORDER,
+        class_names=["Not Recommended", "Recommended"],
+        mode="classification",
+    )
     analyzer = SentimentIntensityAnalyzer()
-    return model, explainer, brand_lookup, analyzer
+    return model, explainer, brand_lookup, lime_explainer, analyzer
+
+
+def build_shap_summary(shap_values_row, feature_names, proba):
+    lines = ["Feature contributions to this recommendation prediction:"]
+    for name, val in zip(feature_names, shap_values_row):
+        lines.append(
+            f"{name}: {val:+.2f} (positive = pushes toward recommended, "
+            f"negative = pushes against)"
+        )
+    lines.append(f"Overall prediction: {proba * 100:.1f}% recommendation likelihood")
+    return "\n".join(lines)
+
+
+def groq_explanation(summary_text):
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    resp = client.chat.completions.create(
+        model="llama3-8b-8192",
+        messages=[
+            {"role": "system", "content": GROQ_SYSTEM_PROMPT},
+            {"role": "user", "content": summary_text},
+        ],
+    )
+    return resp.choices[0].message.content
 
 
 def main():
     st.set_page_config(page_title="Product Recommendation", layout="centered")
     st.title("Product Recommendation")
 
-    model, explainer, brand_lookup, analyzer = load_artifacts()
+    model, explainer, brand_lookup, lime_explainer, analyzer = load_artifacts()
 
     col1, col2 = st.columns(2)
     with col1:
@@ -66,6 +106,7 @@ def main():
             "price_tier": price_tier,
         }
         X = pd.DataFrame([[row[f] for f in FEATURE_ORDER]], columns=FEATURE_ORDER)
+        x_array = X.to_numpy()[0]
 
         proba = model.predict_proba(X)[0, 1]
         st.markdown(f"## {proba * 100:.1f}%")
@@ -76,11 +117,12 @@ def main():
         if isinstance(shap_values, list):
             shap_values = shap_values[1]
             expected_value = expected_value[1] if hasattr(expected_value, "__len__") else expected_value
+        shap_row = shap_values[0, :] if shap_values.ndim > 1 else shap_values
 
-        st.subheader("Explanation")
+        st.subheader("SHAP Explanation")
         shap.force_plot(
             expected_value,
-            shap_values[0, :] if shap_values.ndim > 1 else shap_values,
+            shap_row,
             X.iloc[0, :],
             matplotlib=True,
             show=False,
@@ -89,15 +131,24 @@ def main():
         st.pyplot(fig, bbox_inches="tight")
         plt.close(fig)
 
-        if proba >= 0.7:
-            msg = "Strong signal that this product will be recommended."
-        elif proba >= 0.5:
-            msg = "Leaning toward a recommendation, but the signal is moderate."
-        elif proba >= 0.3:
-            msg = "Unlikely to be recommended — a few features pull against it."
-        else:
-            msg = "Low likelihood of recommendation."
-        st.write(msg)
+        st.subheader("LIME Explanation")
+        lime_exp = lime_explainer.explain_instance(
+            data_row=x_array,
+            predict_fn=lambda arr: model.predict_proba(
+                pd.DataFrame(arr, columns=FEATURE_ORDER)
+            ),
+            num_features=len(FEATURE_ORDER),
+        )
+        lime_fig = lime_exp.as_pyplot_figure()
+        st.pyplot(lime_fig, bbox_inches="tight")
+        plt.close(lime_fig)
+
+        st.subheader("Plain-language Explanation")
+        summary_text = build_shap_summary(shap_row, FEATURE_ORDER, proba)
+        try:
+            st.write(groq_explanation(summary_text))
+        except Exception as e:
+            st.error(f"Could not generate Groq explanation: {e}")
 
 
 if __name__ == "__main__":
