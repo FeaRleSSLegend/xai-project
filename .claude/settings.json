@@ -12,7 +12,8 @@
       "Bash(uv add *)",
       "Bash(git -C c:/Users/MSI/Projects/xai_project add pyproject.toml uv.lock)",
       "Bash(uv sync *)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project add app.py requirements.txt pyproject.toml uv.lock)"
+      "Bash(git -C c:/Users/MSI/Projects/xai_project add app.py requirements.txt pyproject.toml uv.lock)",
+      "Bash(git -C c:/Users/MSI/Projects/xai_project add app.py)"
     ]
   }
 }

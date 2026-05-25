@@ -26,12 +26,23 @@ PRICE_TIERS = {
 }
 
 GROQ_SYSTEM_PROMPT = (
-    "You are explaining an AI product recommendation system to a non-technical "
-    "user. Given SHAP feature contributions, explain in exactly 3 plain sentences: "
-    "what drove this recommendation score, which features helped and which hurt, "
-    "and what this means for the product overall. Be specific about feature names "
-    "and values. No bullet points, just flowing sentences."
+    "You explain AI product recommendations in plain, simple English for everyday "
+    "users. Given feature contributions, write exactly 2 short sentences. First "
+    "sentence: what mainly drove the score (mention only the top 1-2 features by "
+    "name in plain language, no numbers). Second sentence: one line on what this "
+    "means for the product. Keep it simple, like you're talking to someone who "
+    "knows nothing about AI. No technical terms, no numbers, no bullet points."
 )
+
+SAMPLE_SIZE = 1000
+
+
+def _normalize_shap(shap_values, expected_value):
+    if isinstance(shap_values, list):
+        shap_values = shap_values[1]
+        if hasattr(expected_value, "__len__"):
+            expected_value = expected_value[1]
+    return shap_values, expected_value
 
 
 @st.cache_resource
@@ -47,7 +58,19 @@ def load_artifacts():
         mode="classification",
     )
     analyzer = SentimentIntensityAnalyzer()
-    return model, explainer, brand_lookup, lime_explainer, analyzer
+    return model, explainer, brand_lookup, X_train_sample, lime_explainer, analyzer
+
+
+@st.cache_resource
+def compute_global_shap(_explainer, X_train_sample):
+    n = min(SAMPLE_SIZE, X_train_sample.shape[0])
+    rng = np.random.default_rng(42)
+    idx = rng.choice(X_train_sample.shape[0], size=n, replace=False)
+    X_sample = pd.DataFrame(X_train_sample[idx], columns=FEATURE_ORDER)
+    shap_values = _explainer.shap_values(X_sample)
+    expected_value = _explainer.expected_value
+    shap_values, expected_value = _normalize_shap(shap_values, expected_value)
+    return shap_values, X_sample, expected_value
 
 
 def build_shap_summary(shap_values_row, feature_names, proba):
@@ -73,11 +96,20 @@ def groq_explanation(summary_text):
     return resp.choices[0].message.content
 
 
+def show_current_fig():
+    fig = plt.gcf()
+    st.pyplot(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     st.set_page_config(page_title="Product Recommendation", layout="centered")
     st.title("Product Recommendation")
 
-    model, explainer, brand_lookup, lime_explainer, analyzer = load_artifacts()
+    model, explainer, brand_lookup, X_train_sample, lime_explainer, analyzer = load_artifacts()
+    global_shap_values, X_sample, global_expected_value = compute_global_shap(
+        explainer, X_train_sample
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -112,12 +144,10 @@ def main():
         st.markdown(f"## {proba * 100:.1f}%")
         st.caption("Recommendation likelihood")
 
-        shap_values = explainer.shap_values(X)
+        shap_values_inst = explainer.shap_values(X)
         expected_value = explainer.expected_value
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]
-            expected_value = expected_value[1] if hasattr(expected_value, "__len__") else expected_value
-        shap_row = shap_values[0, :] if shap_values.ndim > 1 else shap_values
+        shap_values_inst, expected_value = _normalize_shap(shap_values_inst, expected_value)
+        shap_row = shap_values_inst[0, :] if shap_values_inst.ndim > 1 else shap_values_inst
 
         st.subheader("SHAP Explanation")
         shap.force_plot(
@@ -127,9 +157,7 @@ def main():
             matplotlib=True,
             show=False,
         )
-        fig = plt.gcf()
-        st.pyplot(fig, bbox_inches="tight")
-        plt.close(fig)
+        show_current_fig()
 
         st.subheader("LIME Explanation")
         lime_exp = lime_explainer.explain_instance(
@@ -142,6 +170,28 @@ def main():
         lime_fig = lime_exp.as_pyplot_figure()
         st.pyplot(lime_fig, bbox_inches="tight")
         plt.close(lime_fig)
+
+        st.subheader("Feature Importance (Bar Chart)")
+        shap.summary_plot(global_shap_values, X_sample, plot_type="bar", show=False)
+        show_current_fig()
+
+        st.subheader("Feature Impact Summary")
+        shap.summary_plot(global_shap_values, X_sample, show=False)
+        show_current_fig()
+
+        st.subheader("Feature Dependence: Sentiment Score")
+        shap.dependence_plot("sentiment_score", global_shap_values, X_sample, show=False)
+        show_current_fig()
+
+        st.subheader("Prediction Waterfall")
+        waterfall_exp = shap.Explanation(
+            values=shap_row,
+            base_values=expected_value,
+            data=X.iloc[0].values,
+            feature_names=FEATURE_ORDER,
+        )
+        shap.plots.waterfall(waterfall_exp, show=False)
+        show_current_fig()
 
         st.subheader("Plain-language Explanation")
         summary_text = build_shap_summary(shap_row, FEATURE_ORDER, proba)
