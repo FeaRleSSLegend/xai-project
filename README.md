@@ -35,3 +35,8 @@ streamlit run app.py
 
 Amazon Unlocked Mobile Phones — via Kaggle
 https://www.kaggle.com/datasets/PromptCloudHQ/amazon-reviews-unlocked-mobile-phones
+
+## Links
+
+- **Live App**: https://xai-project-g7.streamlit.app/
+- **Demo Video**: https://youtu.be/W6WqgXfzifs
