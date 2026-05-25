@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# Virtual environment
+.venv/
+venv/
+
+# Secrets
+.streamlit/secrets.toml
+
+# Models (large files)
+models/*.pkl
+models/*.npy
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
