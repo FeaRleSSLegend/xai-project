@@ -1,20 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C c:/Users/MSI/Projects/xai_project status)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project log --oneline -5)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project remote -v)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project diff --stat HEAD)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project ls-files)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project add pyproject.toml)",
+      "Bash(git -C c:/Users/MSI/Projects/xai_project add -A .claude .gitignore)",
       "Bash(git -C c:/Users/MSI/Projects/xai_project commit -m ' *)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project push origin master)",
-      "Bash(uv add *)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project add pyproject.toml uv.lock)",
-      "Bash(uv sync *)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project add app.py requirements.txt pyproject.toml uv.lock)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project add app.py)",
-      "Bash(git -C c:/Users/MSI/Projects/xai_project add README.md)"
+      "Bash(git -C c:/Users/MSI/Projects/xai_project push origin master)"
     ]
   }
 }
